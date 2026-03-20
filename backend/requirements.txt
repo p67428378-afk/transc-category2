@@ -4,3 +4,4 @@ pandas==2.2.1
 SQLAlchemy==2.0.28
 python-dotenv==1.0.1
 psycopg2-binary==2.9.9
+pytest==8.1.1
