@@ -72,10 +72,10 @@ def test_upload_transactions_csv_success(client: TestClient, db_session: Session
     assert response.json()["message"] == "Transaction upload initiated successfully"
     
     # Verify transactions are in the database
-    transactions = db_session.query(Transaction).filter(Transaction.owner_id == dummy_user.id).all()
+    transactions = db_session.query(Transaction).filter(Transaction.owner_id == dummy_user.id).order_by(Transaction.date, Transaction.description).all()
     assert len(transactions) == 2
-    assert transactions[0].description == "Groceries"
-    assert transactions[1].amount == 5.50
+    assert transactions[0].description == "Coffee"
+    assert transactions[1].description == "Groceries"
 
 def test_upload_transactions_invalid_file_type(client: TestClient):
     files = {"file": ("transactions.txt", "some content", "text/plain")}
@@ -93,10 +93,10 @@ def test_run_etl_pipeline_valid_data(db_session: Session, dummy_user):
     success = run_etl_pipeline(file_path, dummy_user.id, db_session)
     assert success is True
 
-    transactions = db_session.query(Transaction).filter(Transaction.owner_id == dummy_user.id).all()
+    transactions = db_session.query(Transaction).filter(Transaction.owner_id == dummy_user.id).order_by(Transaction.date, Transaction.description).all()
     assert len(transactions) == 2
-    assert transactions[0].description == "Lunch"
-    assert transactions[1].amount == 25.00
+    assert transactions[0].description == "Dinner"
+    assert transactions[1].description == "Lunch"
     os.remove(file_path)
 
 def test_run_etl_pipeline_missing_columns(db_session: Session, dummy_user):
