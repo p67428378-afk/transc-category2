@@ -1,2 +1,1 @@
-def test_example_success():
-    assert True
+# This file is deprecated. See test_transactions.py for actual tests.
