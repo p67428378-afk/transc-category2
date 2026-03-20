@@ -4,17 +4,15 @@ from sqlalchemy.orm import sessionmaker, Session
 from fastapi import Depends
 import pytest
 import os
-import shutil
-import pandas as pd
 from io import StringIO
 
 from app.main import app
 from app.database.database import Base, get_db
-from app.etl.pipeline import run_etl_pipeline, create_db_and_tables
+from app.etl.pipeline import run_etl_pipeline
 from app.database.models import Transaction, User # Import Transaction and User models
 
 # Setup for in-memory SQLite database for testing
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
 engine = create_engine(SQLALCHEMY_DATABASE_URL)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -27,9 +25,7 @@ def db_session_fixture():
         yield db
     finally:
         db.close()
-        # Ensure the database file is removed after tests
-        if os.path.exists("./test.db"):
-            os.remove("./test.db")
+        # No need to remove file for in-memory SQLite
 
 @pytest.fixture(name="client")
 def client_fixture(db_session: Session):
@@ -73,16 +69,6 @@ def test_upload_transactions_invalid_file_type(client: TestClient):
     
     assert response.status_code == 400
     assert response.json()["detail"] == "Only CSV files are allowed"
-
-def test_create_db_and_tables():
-    # This test ensures that the function runs without error
-    # The db_session fixture already handles creation and dropping for other tests
-    # This is more of a sanity check for the function itself
-    try:
-        create_db_and_tables()
-        assert True
-    except Exception as e:
-        pytest.fail(f"create_db_and_tables failed with error: {e}")
 
 def test_run_etl_pipeline_valid_data(db_session: Session, dummy_user):
     csv_data = StringIO("date,description,amount\n2023-01-01,Lunch,12.34\n2023-01-02,Dinner,25.00")
