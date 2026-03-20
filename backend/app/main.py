@@ -13,7 +13,7 @@ app = FastAPI(
 # Removed: def on_startup():
 # Removed:    create_db_and_tables() # This was causing the issue
 
-app.include_router(transactions.router, prefix="/api")
+app.include_router(transactions.router, prefix="/api/transactions", tags=["transactions"]) # Reverted to original
 
 @app.get("/")
 async def read_root():
