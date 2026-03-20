@@ -1,0 +1,31 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyd
+*.pyo
+
+# C extensions
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Editors
+.vscode/
+.idea/
+
+# Environments
+.env
+venv/
+env/
+
+# Testing
+.pytest_cache/
+
+# Data
+*.csv.tmp
+/tmp/
