@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends
 from .database.database import get_db
 from .routers import transactions
-from .etl.pipeline import create_db_and_tables # Import create_db_and_tables
+# Removed: from .etl.pipeline import create_db_and_tables # No longer called directly by app startup
 
 app = FastAPI(
     title="Automated Transaction Categorization System API",
@@ -9,9 +9,9 @@ app = FastAPI(
     version="1.0.0",
 )
 
-@app.on_event("startup")
-def on_startup():
-    create_db_and_tables() # Call without argument, uses default engine
+# Removed: @app.on_event("startup")
+# Removed: def on_startup():
+# Removed:    create_db_and_tables() # This was causing the issue
 
 app.include_router(transactions.router, prefix="/api")
 
