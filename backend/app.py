@@ -3,6 +3,9 @@ from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 import pandas as pd
 
+# Import the ETL pipeline function
+from data_engineering.etl_pipeline import run_etl
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -32,17 +35,19 @@ def upload_transactions():
 
             # Simulate storing raw CSV data (e.g., to a data lake or local storage)
             # In a real scenario, this would go to object storage like GCS/S3
-            raw_data_path = f"./raw_data/{file.filename}"
-            os.makedirs(os.path.dirname(raw_data_path), exist_ok=True)
+            raw_data_dir = "./raw_data"
+            os.makedirs(raw_data_dir, exist_ok=True)
+            raw_data_path = os.path.join(raw_data_dir, file.filename)
             df.to_csv(raw_data_path, index=False)
             print(f"Raw data saved to {raw_data_path}")
 
-            # Simulate triggering ETL pipeline
-            # In a real scenario, this would be a message to a queue (e.g., Pub/Sub, Kafka)
-            job_id = f"etl_job_{os.urandom(4).hex()}"
-            print(f"ETL pipeline triggered for {file.filename} with job ID: {job_id}")
+            # Trigger ETL pipeline
+            etl_success = run_etl(raw_data_path, DATABASE_URL)
 
-            return jsonify({"message": "CSV uploaded successfully", "job_id": job_id}), 202
+            if etl_success:
+                return jsonify({"message": "CSV uploaded and ETL triggered successfully"}), 202
+            else:
+                return jsonify({"error": "CSV uploaded but ETL failed"}), 500
 
         except pd.errors.EmptyDataError:
             return jsonify({"error": "Uploaded CSV file is empty"}), 400
