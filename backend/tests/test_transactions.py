@@ -13,11 +13,12 @@ from app.database.models import Transaction, User # Import Transaction and User 
 
 # Setup for in-memory SQLite database for testing
 SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
-engine = create_engine(SQLALCHEMY_DATABASE_URL)
+# Add check_same_thread=False for SQLite to allow multi-threaded access in tests
+engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Override the get_db dependency for testing
-@pytest.fixture(name="db_session")
+@pytest.fixture(name="db_session", scope="module")
 def db_session_fixture():
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
@@ -25,18 +26,31 @@ def db_session_fixture():
         yield db
     finally:
         db.close()
-        # No need to remove file for in-memory SQLite
+        Base.metadata.drop_all(bind=engine) # Drop tables after all tests in the module
 
-@pytest.fixture(name="client")
-def client_fixture(db_session: Session):
+@pytest.fixture(name="client", scope="module")
+def client_fixture():
+    # Create a new engine and session for the client to avoid thread issues with SQLite
+    test_engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+    TestClientSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+    Base.metadata.create_all(bind=test_engine)
+
     def override_get_db():
-        yield db_session
+        db = TestClientSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+    
     app.dependency_overrides[get_db] = override_get_db
-    yield TestClient(app)
+    with TestClient(app) as c:
+        yield c
     app.dependency_overrides.clear()
+    Base.metadata.drop_all(bind=test_engine)
 
 # Fixture to create a dummy user for testing ETL pipeline
-@pytest.fixture
+@pytest.fixture(scope="module")
 def dummy_user(db_session: Session):
     user = User(email="test@example.com", hashed_password="hashedpassword")
     db_session.add(user)
