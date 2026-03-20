@@ -8,7 +8,7 @@ from io import StringIO
 
 from app.main import app
 from app.database.database import Base, get_db
-from app.etl.pipeline import run_etl_pipeline
+from app.etl.pipeline import run_etl_pipeline, create_db_and_tables # Import create_db_and_tables
 from app.database.models import Transaction, User # Import Transaction and User models
 
 # Setup for in-memory SQLite database for testing
@@ -20,7 +20,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engin
 # Override the get_db dependency for testing
 @pytest.fixture(name="db_session", scope="module")
 def db_session_fixture():
-    Base.metadata.create_all(bind=engine)
+    create_db_and_tables(bind_engine=engine) # Use the test engine
     db = TestingSessionLocal()
     try:
         yield db
@@ -34,7 +34,7 @@ def client_fixture():
     test_engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
     TestClientSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
-    Base.metadata.create_all(bind=test_engine)
+    create_db_and_tables(bind_engine=test_engine) # Use the test engine
 
     def override_get_db():
         db = TestClientSessionLocal()
