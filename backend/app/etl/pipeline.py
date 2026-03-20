@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from ..database.models import Transaction, Category, User, CustomerDimension, DateDimension, CategoryDimension, TransactionFact, Base
 from ..database.database import engine
 from datetime import datetime
+from sqlalchemy import func
 
 def create_db_and_tables():
     Base.metadata.create_all(bind=engine)
@@ -15,6 +16,9 @@ def run_etl_pipeline(file_path: str, user_id: int, db: Session):
         print(f"Error reading CSV: {e}")
         return False
 
+    # Convert column names to lowercase for consistency
+    df.columns = df.columns.str.lower()
+
     # Basic validation: check for required columns
     required_columns = ["date", "description", "amount"]
     if not all(col in df.columns for col in required_columns):
@@ -22,46 +26,59 @@ def run_etl_pipeline(file_path: str, user_id: int, db: Session):
         return False
 
     # 2. Transform
-    # Convert column names to lowercase for consistency
-    df.columns = df.columns.str.lower()
+    # Convert 'date' column to datetime objects, coercing errors
+    df['date'] = pd.to_datetime(df['date'], errors='coerce')
 
-    # Convert 'date' column to datetime objects
-    df['date'] = pd.to_datetime(df['date'])
+    # Drop rows with any missing required values (date, description, amount)
+    df.dropna(subset=required_columns, inplace=True)
 
-    # Handle potential duplicates based on owner_id, description, amount, date
-    # This assumes a unique combination for a user's transactions
+    if df.empty:
+        print("No valid transactions to process after cleaning.")
+        return True # No data to process, but not an error
+
+    # Deduplicate within the current batch based on description, amount, date, and user_id
     initial_rows = len(df)
     df.drop_duplicates(subset=['description', 'amount', 'date'], inplace=True)
     if len(df) < initial_rows:
-        print(f"Removed {initial_rows - len(df)} duplicate transactions.")
+        print(f"Removed {initial_rows - len(df)} duplicate transactions within the batch.")
+
+    # Prepare for efficient database duplicate check
+    # Get existing transactions for the user that match the incoming data's description, amount, and date
+    existing_transactions = db.query(Transaction).filter(
+        Transaction.owner_id == user_id,
+        func.lower(Transaction.description).in_(df['description'].str.lower().tolist()),
+        Transaction.amount.in_(df['amount'].tolist()),
+        Transaction.date.in_(df['date'].tolist())
+    ).all()
+
+    # Create a set of existing transaction tuples for quick lookup
+    existing_transaction_set = set()
+    for t in existing_transactions:
+        existing_transaction_set.add((t.description.lower(), t.amount, t.date.date()))
+
+    # Filter out transactions that already exist in the database
+    new_transactions_df = df[~df.apply(lambda row: (row['description'].lower(), row['amount'], row['date'].date()) in existing_transaction_set, axis=1)]
+
+    if new_transactions_df.empty:
+        print("All transactions in the batch already exist in the database. No new transactions added.")
+        return True
 
     # Placeholder for categorization (will be done by LLM service later)
-    df['raw_category'] = None # This will be filled by the categorization service
+    new_transactions_df['raw_category'] = None # This will be filled by the categorization service
 
     # 3. Load into OLTP (Transaction) and OLAP (Star Schema) databases
-    for index, row in df.iterrows():
+    for index, row in new_transactions_df.iterrows():
         # Load into Transaction (OLTP) table
-        transaction = db.query(Transaction).filter(
-            Transaction.owner_id == user_id,
-            Transaction.description == row['description'],
-            Transaction.amount == row['amount'],
-            Transaction.date == row['date']
-        ).first()
-
-        if not transaction:
-            transaction = Transaction(
-                description=row['description'],
-                amount=row['amount'],
-                date=row['date'],
-                raw_category=row['raw_category'],
-                owner_id=user_id,
-                status="pending"
-            )
-            db.add(transaction)
-            db.flush() # To get transaction.id before commit
-        else:
-            print(f"Skipping duplicate transaction for user {user_id}: {row['description']}")
-            continue
+        transaction = Transaction(
+            description=row['description'],
+            amount=row['amount'],
+            date=row['date'],
+            raw_category=row['raw_category'],
+            owner_id=user_id,
+            status="pending"
+        )
+        db.add(transaction)
+        db.flush() # To get transaction.id before commit
 
         # Load into Star Schema (OLAP) tables
         # Customer Dimension
@@ -74,7 +91,8 @@ def run_etl_pipeline(file_path: str, user_id: int, db: Session):
                 db.flush()
             else:
                 print(f"User with ID {user_id} not found. Cannot create CustomerDimension.")
-                continue
+                db.rollback() # Rollback the current transaction if customer_dim cannot be created
+                return False
 
         # Date Dimension
         full_date = row['date'].date()
@@ -94,8 +112,6 @@ def run_etl_pipeline(file_path: str, user_id: int, db: Session):
             db.flush()
 
         # Category Dimension (initially, categories might not exist, or be 'uncategorized')
-        # For now, we'll assume categories are created elsewhere or handle a default.
-        # This part will be more robust once categorization service is integrated.
         category_name = row['raw_category'] if row['raw_category'] else "Uncategorized"
         category_obj = db.query(Category).filter(Category.name == category_name).first()
         if not category_obj:
