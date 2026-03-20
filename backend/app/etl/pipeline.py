@@ -5,9 +5,10 @@ from ..database.database import engine
 from datetime import datetime
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError # Import IntegrityError
+from sqlalchemy.engine import Engine # Import Engine
 
-def create_db_and_tables():
-    Base.metadata.create_all(bind=engine)
+def create_db_and_tables(bind_engine: Engine = engine):
+    Base.metadata.create_all(bind=bind_engine)
 
 def run_etl_pipeline(file_path: str, user_id: int, db: Session):
     # 1. Extract (from CSV for now, later from Data Lake)
